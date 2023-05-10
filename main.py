@@ -19,10 +19,15 @@ run_join_files = False
 
 
 def main():
+    # join files if needed
     if run_join_files:
         make_joined_files()
     
+    # group files in groups of 4 patients
+    groups = group_patients()
 
+    # Iterate through groups using for loop
+    # Each value in for loop is a list of 4 files, one should be the test patient
 
 def make_joined_files():
 
@@ -58,97 +63,22 @@ def make_joined_files():
         path_pattern = os.path.join(raw_data_path, f"*{i}.csv")
         results = glob.glob(path_pattern)
     
-    
-    
-    
-    # patient_files_list = []
-    # max_num = 0
-    
-    # # Make data structure where the files will be grouped by ID
-    # # Structure stored in patient_files_list
-    # for file in files_list:
-    #     # get the max number of patient ID
-    #     # get file name
-    #     filename = os.path.basename(file)
+    print("Finished making joined files")
 
-    #     # take away extension
-    #     filename_no_ext_list = filename.split('.')
-    #     filename_no_ext = filename_no_ext_list[0]
+def group_patients():
+    # get all the files in the joined folder
+    joined_files = glob.glob(os.path.join(joined_data_path, "*.csv"))
+    # order files by patient_id, found in the file name by splitting by _
+    # Explanation:
+    #  sort can sort elements in a list using values returned by a custom function
+    #  the custom function is defined by lambda x, where x is the element in the list
+    #  Since each element is a filepath, we can split the filepath by _ and get the last element, 
+    #   then split by . and get the first element to get the patient_id
+    #   Example: joined_0.csv, split by _ and get las element to get 0.csv, split by . and get first element to get 0
+    # Instead of sorting out the normal list, it will sort the elements 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ... as ints
+    joined_files.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
 
-    #     # Get patient ID
-    #     id_list = filename_no_ext.split('_')
-    #     patient_id_str = id_list[1]
-    #     patient_id = int(patient_id_str)
-
-    #     if patient_id > max_num:
-    #         max_num = patient_id
-
-    # patients_num = max_num + 1
-    # # create a list of lists using the max number
-    # for i in range(patients_num):
-    #     patient_files_list.append([])
-
-    # # patient_files_list should have [[], [], [], ... , []]
-
-    # # here we should have a list from 0 to max_patient_id
-
-    # # get all the files per patient
-    # for file in files_list:
-    #     # get file name
-    #     filename = os.path.basename(file)
-
-    #     # take away extension
-    #     filename_no_ext_list = filename.split('.')
-    #     filename_no_ext = filename_no_ext_list[0]
-
-    #     # Get patient ID
-    #     id_list = filename_no_ext.split('_')
-    #     patient_id_str = id_list[1]
-    #     patient_id = int(patient_id_str)
-
-    #     # add the file to the list
-    #     patient_files_list[patient_id].append(file)
-    # i = 0
-    # for grouped_files in patient_files_list:
-        
-    #     sc_files = []
-    #     y_files = []
-    #     for file in grouped_files:
-    #         if 'SC' in file:
-    #             sc_files.append(file)
-    #         elif 'y' in file:
-    #             y_files.append(file)
-        
-    #     # sort the files
-    #     sc_files.sort()
-    #     y_files.sort()                
-    #     sc_dfs = []
-    #     y_dfs = []
-
-    #     for file in sc_files:
-    #         sc_dfs.append(pd.read_csv(file, header=None))
-    #     for file in y_files:
-    #         y_dfs.append(pd.read_csv(file, header=None))
-        
-    #     # concatenate the dataframes
-    #     sc_df = pd.concat(sc_dfs, axis=0)
-    #     y_df = pd.concat(y_dfs, axis=0)
-
-    #     # change y column name to "label"
-    #     y_df.columns = ['label']
-
-    #     # concatenate the dataframes
-    #     joined_df = pd.concat([sc_df, y_df], axis=1)
-
-    #     # save the dataframe to a file
-    #     filename = 'joined_' + str(i) + '.csv'
-    #     # make output file path
-    #     output_file_path = os.path.join(joined_folder_path, filename)
-    #     print("Saving file: " + output_file_path)
-    #     # save the dataframe to a file
-    #     joined_df.to_csv(output_file_path, index=False)
-
-    #     i+=1
-
+    # group files in groups of 4 in a list of lists
+    # Example: [[file1, file2, file3, file4], [file5, file6, file7, file8]]
 
 main()
