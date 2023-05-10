@@ -4,6 +4,11 @@ Data/*
 # Except the REadme
 !Data/README.md
 
+# Exclude all contents in Outputs
+Outputs/*
+# Except the REadme
+!Outputs/README.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
