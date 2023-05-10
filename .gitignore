@@ -1,3 +1,9 @@
+
+# Exclude all contents in data
+Data/*
+# Except the REadme
+!Data/README.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
