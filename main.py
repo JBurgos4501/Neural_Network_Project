@@ -10,7 +10,6 @@ import os
 import pandas as pd
 import random
 from sklearn.neural_network import MLPClassifier
-import joblib
 
 
 
@@ -32,7 +31,6 @@ def main():
     # group files in groups of 4 patients
     groups=group_patients()
     
-    # preprocced_data= preprocess_data(groups)
     run_model(groups)
     # STEPS:
     # Iterate through groups using for loop
@@ -43,10 +41,6 @@ def main():
         # Make function to determine which are test and which are train (this can be changed to a custom way of splitting later)
         # Get train as a list of 3 files
         # Get test as a list of 1 file
-
-
-
-
         
         # Make function that runs the model, the model being passed as a parameter'
         # Define model object
@@ -132,34 +126,31 @@ def run_model(groups):
 
         train_data = []
         for file_path in train_file_paths:
-            train_data.append(pd.read_csv(file_path))
-            
-        breakpoint()
+            train_data.append(pd.read_csv(file_path))# train_data is a list of 3 dataframes
+        # Get the train labels as a list of arrays
+        train_label = []
+        for file in train_data:
+            train_label.append(file['label'])
 
-
-        # Get the train and test labels
-        train_label = train_data['label']
+        test_data = pd.read_csv(test_file_path)  
         test_label = test_data['label']
 
         # Get the train and test data as numpy arrays
-        train_data = train_data.drop('label', axis=1).values
+        for i in range(len(train_data)):
+            train_data[i] = train_data[i].drop('label', axis=1).values
         test_data = test_data.drop('label', axis=1).values
-
 
         # Run the neural network model
         model = MLPClassifier(hidden_layer_sizes=(64, 64), activation='relu', solver='adam', max_iter=100, verbose=0)
 
         # Fit the model on the training data
-        model.fit(train_data, train_label)
+        for i in range(len(train_data)):
+            model.fit(train_data[i], train_label[i])
 
         # Evaluate the model on the test data and print the accuracy
         accuracy = model.score(test_data, test_label)
         print(f"Test Accuracy: {accuracy}")
 
 
-
-
-
-    
 
 main()
