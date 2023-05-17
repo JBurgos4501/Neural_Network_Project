@@ -137,41 +137,26 @@ def make_joined_files():
 
     print("Finished making joined files")
 
-def group_patients():   #Group files in groups of 4 in a list of lists
-
-    # get all the files in the joined folder
+def group_patients():
+    # Get all the files in the joined folder
     joined_files = glob.glob(os.path.join(joined_data_path, "*.csv"))
-    #Sort the files by number
+    # Sort the files by number
     joined_files.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
-    #Initialize groups as an empty list
+    # Initialize groups as an empty list
     groups = []
-   
-    for i in range(0, len(joined_files), 4): #Iterate through the files in groups of 4
-        #Get 4 files
-        group = joined_files[i:i+4]
-        #Add to groups if there are 4 files
-        if len(group) == 4:
-                # Initialize variables for tracking the best files
-            best_train_files = []
-            best_test_file = None
-            highest_avg_value = 0.0
-            #detect which files are better for training and which for testing
-            # Evaluate each file
-            for file_path in group:
-                # Read the file and calculate the average value in a specific column
-                data = pd.read_csv(file_path)
-                avg_value = data['label'].mean()
-                #print the average value for each file
-                print(f"Average value for {file_path}: {avg_value}")
-                # Update the best files if a higher average value is found
-                if avg_value > highest_avg_value:
-                    highest_avg_value = avg_value
-                    best_train_files = group[:-1]
-                    best_test_file = group[-1]
-            #Add the train and test files as a tuple to the groups list
-            groups.append((best_train_files, best_test_file))
-    breakpoint()
 
+    for i in range(0, len(joined_files), 4):  # Iterate through the files in groups of 4
+        # Get 4 files
+        group = joined_files[i:i+4]
+        # Add to groups if there are 4 files
+        if len(group) == 4:
+            # Select a random file to be the test file
+            test_file = random.choice(group)
+            # Remove the selected test file from the group
+            group.remove(test_file)
+            # Add the train and test files as a tuple to the groups list
+            groups.append((group, test_file))
+    breakpoint()
     return groups
 
 
