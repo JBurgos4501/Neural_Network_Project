@@ -57,7 +57,7 @@ joined_data_path = os.path.join(data_base_path, "Joined")
 
 # Control Variables
 run_join_files = False
-get_mlp = False
+get_mlp = True
 get_hybrid = False
 get_assigned = False
 
@@ -78,8 +78,11 @@ def main():
     
     # group files in groups of 4 patients
     groups=group_patients()
+    train_test_list= get_train_test(groups)
+
     
-    run_model(groups)
+    
+    run_model(train_test_list, model)
     # STEPS:
     # Iterate through groups using for loop
     #for group in groups:
@@ -156,84 +159,112 @@ def group_patients():
             group.remove(test_file)
             # Add the train and test files as a tuple to the groups list
             groups.append((group, test_file))
-    breakpoint()
+
     return groups
 
-
-def run_model(groups):
-    # Iterate through the groups
-    for group in groups: # group is a tuple of train and test files
-        # Get the train and test files
-        train_file_paths = group[0]# train_file_paths is a list of 3 file paths
-        test_file_path = group[1] # test_file_path is a string of 1 file path
-
-        train_data = []
-        for file_path in train_file_paths:
-            train_data.append(pd.read_csv(file_path))# train_data is a list of 3 dataframes
-        # Get the train labels as a list of arrays
-        train_label = []
-        for file in train_data:
-            train_label.append(file['label'])
-
-        test_data = pd.read_csv(test_file_path)  
-        test_label = test_data['label']
-
-        # Get the train and test data as numpy arrays
-        for i in range(len(train_data)):
-            train_data[i] = train_data[i].drop('label', axis=1).values
+def get_train_test(groups):
+    # Example of train_test_list:
+    # [["patient_0", "patient_1", "patient_2", "patient_4", "patient_5", "patient_6"], ["patient_3", patient_7"]]
+    train_test_list =[[],[]]
+    for group in groups:
+        # Type of vraiable expcted for group[0], list of strings that represent file paths
+        # type of variable expected for group[1], string that represents file path
+        for file in group[0]:
+            train_test_list[0].append(file)
         
-        test_data = test_data.drop('label', axis=1).values
+        train_test_list[1].append(group[1])
+    return train_test_list
 
-        # Concatenate the train data and labels
-        for i in range(len(train_data)):
-            train_data[i] = np.concatenate((train_data[i], train_label[i].values.reshape(-1, 1)), axis=1)
+def run_model(train_test_list, model, folds=3):
+    train_data = [] # List of dataframes    
+    # Load data first
+    for train_patient_path in train_test_list[0]: 
 
-        # define the neural network model
-        model = MLPClassifier(hidden_layer_sizes=(64, 64), activation='relu', solver='adam', max_iter=100, verbose=0)
+        # Load patient data
+        patient_train_data = pd.read_csv(train_patient_path)
+        train_data.append(patient_train_data)
 
-        # Define the K-Fold cross-validator (k=3)
-        kfold = KFold(n_splits=3, shuffle=True)
+    # Concatenate the train data
+    train_data = pd.concat(train_data, axis=0)
 
-        # Initialize the confusion matrix variable
-        cm_total = np.zeros((10, 10))
-        # Iterate through the folds and fit the model
-        for fold, (train_idx, val_idx) in enumerate(kfold.split(train_data)):
-            print(f"Fold {fold + 1}")
-            # Get the training and validation data
-            for i in range(len(train_data)):
-                X_train = train_data[i][train_idx]
-                X_val = train_data[i][val_idx]
-                y_train = train_label[i][train_idx]
-                y_val = train_label[i][val_idx]
+    # Convert the train data to a numpy array
+    train_data = train_data.to_numpy()
 
-            # Fit the model
-            for i in range(len(train_data)):
-                model.fit(X_train, y_train)
-            breakpoint()
-            # Predict the labels for the test data
-            y_pred = model.predict(test_data)
+    kfold = KFold(n_splits=folds, shuffle=True)
 
-            # Generate the confusion matrix
-            cm = confusion_matrix(test_label, y_pred)
-            print(cm)
+    for fold, (train_idx, val_idx) in enumerate(kfold.split(train_data)):
+        print(f"Fold {fold + 1}")
+        # Get the training and validation data
+        model_train_data = train_data[train_idx]
+        model_val_data = train_data[val_idx]
 
-            # Add the current fold's confusion matrix to the total confusion matrix
-            cm_total += cm
+        # Make X and y for training and validation
+        X_train = model_train_data[:, :-1]
+        y_train = model_train_data[:, -1]
+        X_val = model_val_data[:, :-1]
+        y_val = model_val_data[:, -1]
 
-            # Evaluate the model on the test data and print the accuracy
-            accuracy = model.score(test_data, test_label)
-            print(f"Test Accuracy: {accuracy}\n")
+        # Fit the model
+        model.fit(X_train, y_train)
 
-        # Print the total confusion matrix after all folds
-        print(f"Total Confusion Matrix:\n{cm_total}\n")
+        # Predict the labels for the val data
+        y_pred = model.predict(X_val)
 
-        # Print results
-        print("Results:\n")
-        print("Accuracy: ", np.trace(cm_total) / np.sum(cm_total))
-        print("Precision: ", np.trace(cm_total) / np.sum(cm_total, axis=0))
-        print("Recall: ", np.trace(cm_total) / np.sum(cm_total, axis=1))
-        print("F1: ", 2 * np.trace(cm_total) / (np.sum(cm_total, axis=0) + np.sum(cm_total, axis=1)))
-        print("\n")
+        
+
+
+        # # Concatenate the train data and labels
+        # for i in range(len(train_data)):
+        #     train_data[i] = np.concatenate((train_data[i], train_label[i].values.reshape(-1, 1)), axis=1)
+
+        # # define the neural network model
+        # #model = MLPClassifier(hidden_layer_sizes=(64, 64), activation='relu', solver='adam', max_iter=100, verbose=0)
+
+        # # Define the K-Fold cross-validator (folds=3)
+        # # Kfold rturns linst of indexes for train and test of a dataset
+        # kfold = KFold(n_splits=folds, shuffle=True)
+
+        
+        # # Iterate through the folds and fit the model
+        # # iterate through each train patient
+        # for patient_data in train_data:
+        #     for fold, (train_idx, val_idx) in enumerate(kfold.split(patient_data)):
+        #         print(f"Fold {fold + 1}")
+        #         breakpoint()
+        #         # Get the training and validation data
+        #         for i in range(len(train_data)):
+        #             X_train = train_data[i][train_idx]
+        #             X_val = train_data[i][val_idx]
+        #             y_train = train_label[i][train_idx]
+        #             y_val = train_label[i][val_idx]
+
+        #         # Fit the model
+        #         for i in range(len(train_data)):
+        #             model.fit(X_train, y_train)
+        #         # Predict the labels for the test data
+        #         y_pred = model.predict(test_data) 
+
+        #         # Generate the confusion matrix
+        #         cm = confusion_matrix(test_label, y_pred)
+        #         print(cm)
+
+        #         # Add the current fold's confusion matrix to the total confusion matrix
+        #         cm_total += cm
+
+        #         # Evaluate the model on the test data and print the accuracy
+        #         accuracy = model.score(test_data, test_label)
+        #         print(f"Test Accuracy: {accuracy}\n")
+
+        # # Print the total confusion matrix after all folds
+        # print(f"Total Confusion Matrix:\n{cm_total}\n")
+
+        # # Print results
+        # print("Results:\n")
+        # print("Accuracy: ", np.trace(cm_total) / np.sum(cm_total))
+        # print("Precision: ", np.trace(cm_total) / np.sum(cm_total, axis=0))
+        # print("Recall: ", np.trace(cm_total) / np.sum(cm_total, axis=1))
+        # print("F1: ", 2 * np.trace(cm_total) / (np.sum(cm_total, axis=0) + np.sum(cm_total, axis=1)))
+        # print("\n")
 
 
 
