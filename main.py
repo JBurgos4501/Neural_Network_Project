@@ -45,15 +45,12 @@ import random
 import time
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import KFold
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import f1_score
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import cohen_kappa_score
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, cohen_kappa_score
 from sklearn.model_selection import GridSearchCV
 import tensorflow as tf
 import keras
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, Conv1D, Flatten, MaxPooling1D, Dropout
 from keras.optimizers import SGD
 #from scikeras.wrappers import KerasClassifier
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
@@ -80,12 +77,6 @@ def main():
     # join files if needed
     if run_join_files:
         make_joined_files()
-        
-    # group files in groups of 4 patients
-    groups=group_patients()
-    
-    train_test_list= get_train_test(groups)
-    
     if get_mlp:
         model = create_mlp()
     elif get_hybrid:
@@ -93,11 +84,16 @@ def main():
         pass
     elif get_assigned:
         pass
+        
+    # group files in groups of 4 patients
+    groups=group_patients()
+    
+    train_test_list= get_train_test(groups)
     
     
-    results_df = run_model(train_test_list, model)
+    results_df = run_model(train_test_list, model, folds=10)
+    
     print (results_df)
-
 
 def make_joined_files(): 
 
@@ -140,26 +136,35 @@ def make_joined_files():
 
     print("Finished making joined files")
 
-def group_patients():
+def group_patients(make_combinations = False, make_random = False):
     # Get all the files in the joined folder
     joined_files = glob.glob(os.path.join(joined_data_path, "*.csv"))
     # Sort the files by number
     joined_files.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
+   
     # Initialize groups as an empty list
     groups = []
 
-    for i in range(0, len(joined_files), 4):  # Iterate through the files in groups of 4
+    for i in range(0, len(joined_files), 5):  # Iterate through the files in groups of 5
         # Get 4 files
-        group = joined_files[i:i+4]
+        group = joined_files[i:i+5]
         # Add to groups if there are 4 files
-        if len(group) == 4:
-            # Select a random file to be the test file
-            test_file = random.choice(group)
-            # Remove the selected test file from the group
-            group.remove(test_file)
-            # Add the train and test files as a tuple to the groups list
-            groups.append((group, test_file))
-
+        if len(group) == 5:
+            if make_random:
+                # Select a random file to be the test file
+                test_file = random.choice(group)
+                # Remove the selected test file from the group
+                group.remove(test_file)
+                # Add the train and test files as a tuple to the groups list
+                groups.append((group, test_file))
+            else:
+                # select the last file to be the test file
+                test_file = group[-1]
+                # Remove the selected test file from the group
+                group.remove(test_file)
+                # Add the train and test files as a tuple to the groups list
+                groups.append((group, test_file))
+               
     return groups
 
 def get_train_test(groups):
@@ -174,6 +179,34 @@ def get_train_test(groups):
         train_test_list[1].append(group[1])
 
     return train_test_list
+
+# def run_preprocessing(normalize, standardize, grid_search):
+# # Part 1 (Preprocessing): Using data from 3 patients for "Train" and 1 patient for "Test," perform the following steps for each neural network:
+#     groups=group_patients()
+#     train_test_list= get_train_test(groups)
+
+#     # Data scaling: Normalize and standardize the data. Compare the results with "Raw data" and determine if it is beneficial to use either of them.
+#     if normalize:
+#         # Normalize data
+#         pass
+#     elif standardize:
+#         # Standardize data
+#         pass
+#     elif grid_search:
+#         # Get the best parameters using GridSearch
+#         pass
+
+#     # Obtain the best parameters using GridSearch.
+#     # For data balancing, use the balancing option available in the "fit" function. Example:
+#         # model.fit(X_train, Y_train, batch_size=batch_size, class_weight=weights)
+#     # where "weights" is calculated as follows:
+#         # def generate_class_weights(y_train):
+#         #     from sklearn.utils.class_weight import compute_class_weight
+#         #     class_labels = np.unique(y_train)  # classes contained in y_train
+#         #     class_weights = compute_class_weight(class_weight='balanced', classes=class_labels, y=y_train)
+#         #     return dict(zip(class_labels, class_weights))
+
+#     return normalize
 
 def run_model(train_test_list, model, folds=3):
     label_encoder = LabelEncoder()
@@ -196,6 +229,8 @@ def run_model(train_test_list, model, folds=3):
     # make dataframe with columns for results per fold
     results_df = pd.DataFrame(columns=["Fold", "Accuracy","Kappa", "F1-Weighted_Score", "Confusion_Matrix", "Train_Time"])
     for fold, (train_idx, val_idx) in enumerate(kfold.split(train_data)):
+
+        results_dict = {}
         
         print(f"Fold {fold + 1}")
         # Get the training and validation data
@@ -207,57 +242,61 @@ def run_model(train_test_list, model, folds=3):
         y_train = model_train_data[:, -1]
         X_val = model_val_data[:, :-1]
         y_val = model_val_data[:, -1]
-        
+
+       
         #convert labels to integers
         y_train = label_encoder.fit_transform(y_train)
         y_val = label_encoder.fit_transform(y_val)
 
-        # #convert labels to one hot encoding
-        # onehot_encoder = OneHotEncoder(sparse=False)
-        # y_train = onehot_encoder.fit_transform(y_train)
-        # y_train = onehot_encoder.fit_transform(y_train)
-
-
-        #get train time
-        start_train_time = time.time()
-        # Fit the model
-        model.fit(X_train, y_train)
-        end_train_time = time.time()
+        #convert to one hot encoding
+        y_train = keras.utils.to_categorical(y_train, num_classes=5)
         
-        # make dictionary to store results, it will be appended to the results_df
-        results_dict = {}
 
-        train_time = end_train_time - start_train_time
-        results_dict["Train_Time"] = train_time
 
-        # Predict the labels for the val data
+        #run model
+        start_time = time.time()
+           # For data balancing, use the balancing option available in the "fit" function. Example:
+        # model.fit(X_train, Y_train, batch_size=batch_size, class_weight=weights)
+        model.fit(X_train, y_train, batch_size=10, epochs=5)
+        end_time = time.time()
+        train_time = end_time - start_time
+
+        # Predict the labels for the validation data
         y_pred = model.predict(X_val)
 
-        # # Get scores
-        # accuracy = accuracy_score(y_val, y_pred)
-        # results_dict["Accuracy"] = accuracy
+        # Get max value for each row
+        y_pred = np.argmax(y_pred, axis=1)
 
-        # # Get kappa
-        # kappa = cohen_kappa_score(y_val, y_pred)
-        # results_dict["Kappa"] = kappa
+
+        # Get scores
+        accuracy = accuracy_score(y_val, y_pred)
+        results_dict["Accuracy"] = accuracy
+
+        # Get kappa
+        kappa = cohen_kappa_score(y_val, y_pred)
+        results_dict["Kappa"] = kappa
         
-        # # Get F1 score
-        # f1 = f1_score(y_val, y_pred, average="weighted")
-        # results_dict["F1-Weighted_Score"] = f1
+        # Get F1 score
+        f1 = f1_score(y_val, y_pred, average="weighted")
+        results_dict["F1-Weighted_Score"] = f1
 
-        # # Get confusion matrix
-        # cm = confusion_matrix(y_val, y_pred)
-        # results_dict["Confusion_Matrix"] = cm
+        # Get confusion matrix
+        cm = confusion_matrix(y_val, y_pred)
+        results_dict["Confusion_Matrix"] = cm
 
-        # # Add fold number
-        # results_dict["Fold"] = fold + 1
+        # Add train time
+        results_dict["Train_Time"] = train_time
 
-        # # Append results to results_df
-        # # Turn dictionary into dataframe
-        # results_dict_df = pd.DataFrame.from_dict(results_dict, orient="index").T
+        # Add fold number
+        results_dict["Fold"] = fold + 1
 
-        # # Use pd.concat to add the results_df to a results_df
-        # results_df = pd.concat([results_df, results_dict_df], axis=0)
+        # Append results to results_df
+        # Turn dictionary into dataframe
+        results_dict_df = pd.DataFrame.from_dict(results_dict, orient="index").T
+
+        # Use pd.concat to add the results_df to a results_df
+        results_df = pd.concat([results_df, results_dict_df], axis=0)
+
 
     print("Test")
     test_data = [] # List of dataframes    
@@ -279,63 +318,69 @@ def run_model(train_test_list, model, folds=3):
     y_test = test_data[:, -1]
 
     #convert labels to integers
-    #y_test = label_encoder.fit_transform(y_test)
+    y_test = label_encoder.fit_transform(y_test)
 
     # Predict the labels for the test data
     y_pred = model.predict(X_test)
 
-    # make dictionary to store results, it will be appended to the results_df
+    # Get max value for each row
+    y_pred = np.argmax(y_pred, axis=1)
+
     results_dict = {}
+    # Get scores
+    accuracy = accuracy_score(y_test, y_pred)
+    results_dict["Accuracy"] = accuracy
 
-    # # Get scores
-    # accuracy = accuracy_score(y_test, y_pred)
-    # results_dict["Accuracy"] = accuracy
-
-    # # Get kappa
-    # kappa = cohen_kappa_score(y_test, y_pred)
-    # results_dict["Kappa"] = kappa
+    # Get kappa
+    kappa = cohen_kappa_score(y_test, y_pred)
+    results_dict["Kappa"] = kappa
     
-    # # Get F1 score
-    # f1 = f1_score(y_test, y_pred, average="weighted")
-    # results_dict["F1-Weighted_Score"] = f1
+    # Get F1 score
+    f1 = f1_score(y_test, y_pred, average="weighted")
+    results_dict["F1-Weighted_Score"] = f1
 
-    # # Get confusion matrix
-    # cm = confusion_matrix(y_test, y_pred)
-    # results_dict["Confusion_Matrix"] = cm
+    # Get confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    results_dict["Confusion_Matrix"] = cm
 
-    # # Fold is -1 for test
-    # results_dict["Fold"] = -1
+    # Fold is -1 for test
+    results_dict["Fold"] = -1
 
-    # # train time is -1 for test
-    # results_dict["Train_Time"] = -1
+    # train time is -1 for test
+    results_dict["Train_Time"] = -1
 
-    # # Append results to results_df
-    # # Turn dictionary into dataframe
-    # results_dict_df = pd.DataFrame.from_dict(results_dict, orient="index").T
+    # Append results to results_df
+    # Turn dictionary into dataframe
+    results_dict_df = pd.DataFrame.from_dict(results_dict, orient="index").T
 
-    # # Use pd.concat to add the results_df to a results_df
-    # results_df = pd.concat([results_df, results_dict_df], axis=0)
+    # Use pd.concat to add the results_df to a results_df
+    results_df = pd.concat([results_df, results_dict_df], axis=0)
 
     return results_df
+
 
 def create_mlp():
     model = Sequential()
    
     # Add the input layer
-    model.add(Dense(units=64, activation='relu', input_dim=3000))
+    model.add(Dense(units=128, activation='relu', input_dim=3000))
     
     # Add one or more hidden layers
+    model.add(Dense(units=256, activation='relu'))
+    model.add(Dense(units=128, activation='relu'))
     model.add(Dense(units=64, activation='relu'))
     model.add(Dense(units=64, activation='relu'))
     
     # Add the output layer
     model.add(Dense(units=5, activation='softmax'))
 
+    #define optimizer
+    sgd = SGD(learning_rate=0.01, momentum=0.2)
+
     # Compile the model
-    model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd', metrics=['accuracy'])
+    model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics= None)
     
     return model
-
 
 main()
 
