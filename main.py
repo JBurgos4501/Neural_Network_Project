@@ -43,7 +43,6 @@ import pandas as pd
 import numpy as np
 import random
 import time
-from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import KFold
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, cohen_kappa_score
 from sklearn.model_selection import GridSearchCV
@@ -53,7 +52,11 @@ from keras.models import Sequential
 from keras.layers import Dense, Conv1D, Flatten, MaxPooling1D, Dropout
 from keras.optimizers import SGD
 #from scikeras.wrappers import KerasClassifier
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import LabelEncoder
+#import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.utils.class_weight import compute_class_weight
+
 
 
 
@@ -71,6 +74,11 @@ run_join_files = False
 get_mlp = True
 get_hybrid = False
 get_assigned = False
+normalize = False
+balance = False
+standardize = False
+grid_search = False
+
 
 
 def main():
@@ -78,7 +86,7 @@ def main():
     if run_join_files:
         make_joined_files()
     if get_mlp:
-        model = create_mlp()
+        model = MlpModel()
     elif get_hybrid:
         #define CNN or a combination of CNN with RNN
         pass
@@ -180,37 +188,57 @@ def get_train_test(groups):
 
     return train_test_list
 
-# def run_preprocessing(normalize, standardize, grid_search):
-# # Part 1 (Preprocessing): Using data from 3 patients for "Train" and 1 patient for "Test," perform the following steps for each neural network:
-#     groups=group_patients()
-#     train_test_list= get_train_test(groups)
+def run_preprocessing(normalize=False, balance=False, standardize=False, grid_search=False, X_train=None, X_test=None, y_train=None, y_test=None, model=None, weights=None):
+    if normalize:
+        # Normalize data
+        scaler = MinMaxScaler()
+        scaler.fit(X_train)
+        X_train = scaler.transform(X_train)
+        X_test = scaler.transform(X_test)
+        
+    elif standardize:
+        # Standardize data
+        scaler = StandardScaler()
+        scaler.fit(X_train)
+        X_train = scaler.transform(X_train)
+        X_test = scaler.transform(X_test)
 
-#     # Data scaling: Normalize and standardize the data. Compare the results with "Raw data" and determine if it is beneficial to use either of them.
-#     if normalize:
-#         # Normalize data
-#         pass
-#     elif standardize:
-#         # Standardize data
-#         pass
-#     elif grid_search:
-#         # Get the best parameters using GridSearch
-#         pass
 
-#     # Obtain the best parameters using GridSearch.
-#     # For data balancing, use the balancing option available in the "fit" function. Example:
-#         # model.fit(X_train, Y_train, batch_size=batch_size, class_weight=weights)
-#     # where "weights" is calculated as follows:
-#         # def generate_class_weights(y_train):
-#         #     from sklearn.utils.class_weight import compute_class_weight
-#         #     class_labels = np.unique(y_train)  # classes contained in y_train
-#         #     class_weights = compute_class_weight(class_weight='balanced', classes=class_labels, y=y_train)
-#         #     return dict(zip(class_labels, class_weights))
+    elif balance:
+        class_labels = np.unique(y_train)  # classes contained in y_train
+        class_weights = compute_class_weight(class_weight='balanced', classes=class_labels, y=y_train)
+        weights = dict(zip(class_labels, class_weights))
 
-#     return normalize
+    elif grid_search:
+        # Define the parameters for grid search
+        parameters = {
+            'loss': ['categorical_crossentropy', 'mean_squared_error', 'mean_absolute_error'],
+            'optimizer': ['SGD', 'RMSprop', 'Adagrad', 'Adadelta', 'Adam', 'Adamax', 'Nadam'],
+            'batch_size': [10, 20, 40, 60, 80, 100],
+            'epochs': [10, 50, 100],
+            'learning_rate': [0.001, 0.01, 0.1, 0.2, 0.3],
+            'momentum': [0.0, 0.2, 0.4, 0.6, 0.8, 0.9],
+            'activation': ['softmax', 'softplus', 'softsign', 'relu', 'tanh', 'sigmoid', 'hard_sigmoid', 'linear'],
+            'dropout_rate': [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+            'neurons': [1, 5, 10, 15, 20, 25, 30],
+            'kernel_initializer': ['uniform', 'lecun_uniform', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform']}
+        
+        # Perform grid search for each patient's data
+        best_params_list = []
+        for patient_data in X_train:
+            # Perform grid search on the training data
+            grid_search_model = GridSearchCV(estimator=model, param_grid=parameters, cv=5)
+            grid_search_model.fit(patient_data, y_train)  # Assuming you have the target variable y_train
+            best_params_list.append(grid_search_model.best_params_)
+            breakpoint()
+        
+   
+
+    return X_train, X_test, y_train, y_test, weights
+
 
 def run_model(train_test_list, model, folds=3):
-    label_encoder = LabelEncoder()
-
+    weights = None
     train_data = [] # List of dataframes    
     # Load data first
     for train_patient_path in train_test_list[0]: 
@@ -224,6 +252,7 @@ def run_model(train_test_list, model, folds=3):
 
     # Convert the train data to a numpy array
     train_data = train_data.to_numpy()
+
 
     kfold = KFold(n_splits=folds, shuffle=True)
     # make dataframe with columns for results per fold
@@ -243,21 +272,21 @@ def run_model(train_test_list, model, folds=3):
         X_val = model_val_data[:, :-1]
         y_val = model_val_data[:, -1]
 
-       
-        #convert labels to integers
-        y_train = label_encoder.fit_transform(y_train)
-        y_val = label_encoder.fit_transform(y_val)
+        #preprocess data
+        X_train, X_val, y_train, y_val, weights = run_preprocessing(normalize=False, balance=False, standardize=False, grid_search=False, X_train=X_train, X_test=X_val, y_train=y_train, y_test=y_val, model=model)
 
-        #convert to one hot encoding
+         #convert labels to integers
+        y_train = LabelEncoder().fit_transform(y_train)
+        y_val = LabelEncoder().fit_transform(y_val)
+
+        #convert to categorical
         y_train = keras.utils.to_categorical(y_train, num_classes=5)
-        
-
 
         #run model
         start_time = time.time()
            # For data balancing, use the balancing option available in the "fit" function. Example:
         # model.fit(X_train, Y_train, batch_size=batch_size, class_weight=weights)
-        model.fit(X_train, y_train, batch_size=10, epochs=5)
+        model.fit(X_train, y_train, batch_size=10, epochs=5, class_weight=weights)
         end_time = time.time()
         train_time = end_time - start_time
 
@@ -298,7 +327,7 @@ def run_model(train_test_list, model, folds=3):
         results_df = pd.concat([results_df, results_dict_df], axis=0)
 
 
-    print("Test")
+    print("Predicting Test")
     test_data = [] # List of dataframes    
     # Load data first
     for test_patient_path in train_test_list[1]: 
@@ -318,7 +347,7 @@ def run_model(train_test_list, model, folds=3):
     y_test = test_data[:, -1]
 
     #convert labels to integers
-    y_test = label_encoder.fit_transform(y_test)
+    y_test = LabelEncoder().fit_transform(y_test)
 
     # Predict the labels for the test data
     y_pred = model.predict(X_test)
@@ -359,7 +388,7 @@ def run_model(train_test_list, model, folds=3):
     return results_df
 
 
-def create_mlp():
+def MlpModel():
     model = Sequential()
    
     # Add the input layer
