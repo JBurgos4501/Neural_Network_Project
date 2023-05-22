@@ -219,7 +219,7 @@ def run_model(train_test_list, model, folds=3):
         y_val = model_val_data[:, -1]
 
         #preprocess data
-        X_train, X_val, y_train, y_val, weights = run_preprocessing(normalize=False, balance=False, standardize=False, X_train=X_train, X_test=X_val, y_train=y_train, y_test=y_val, model=model)
+        X_train, X_val, y_train, y_val, weights = run_preprocessing(normalize=False, balance=False, standardize=False, X_train=X_train, X_test=X_val, y_train=y_train, y_test=y_val)
 
          #convert labels to integers
         y_train = LabelEncoder().fit_transform(y_train)
