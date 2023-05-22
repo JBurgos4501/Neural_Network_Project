@@ -6,36 +6,6 @@ Created on Tue May  9 21:07:24 2023
 @author: mugiwara
 """
 
-# Objective:
-    # Apply concepts defined in class on data preprocessing, data handling, and classification.
-    # Implement and configure artificial neural networks (ANN) in Python.
-    # Analyze and synthesize the results.
-
-# The following neural networks will be used:
-    # MLP ("Multi-Layer Perceptron")
-    # Hybrid: Can be CNN or a combination of CNN with RNN ("Recursive Neural Network")
-    # Assigned: Neural network given by the professor.
-
-# Methodology:
-
-# Part 1 (Preprocessing): Using data from 3 patients for "Train" and 1 patient for "Test," perform the following steps for each neural network:
-    # Data scaling: Normalize and standardize the data. Compare the results with "Raw data" and determine if it is beneficial to use either of them.
-    # Obtain the best parameters using GridSearch.
-    # For data balancing, use the balancing option available in the "fit" function. Example:
-        # model.fit(X_train, Y_train, batch_size=batch_size, class_weight=weights)
-    # where "weights" is calculated as follows:
-        # def generate_class_weights(y_train):
-        #     from sklearn.utils.class_weight import compute_class_weight
-        #     class_labels = np.unique(y_train)  # classes contained in y_train
-        #     class_weights = compute_class_weight(class_weight='balanced', classes=class_labels, y=y_train)
-        #     return dict(zip(class_labels, class_weights))
-# Part 2 (Processing): Using all the data and performing cross-validation with FOLD=3, obtain the following:
-    # Confusion matrix for each FOLD (test data).
-    # "F1-score" for each class in each FOLD (test data).
-    # Average metrics (across the 5 FOLDS): "accuracy" and "F1-score".
-    # Average time taken for training ("train").
-    # Training analysis: Conduct an analysis of each neural network to observe its behavior during training and display the corresponding graphs.
-
 
 import glob
 import os
@@ -51,11 +21,11 @@ import keras
 from keras.models import Sequential
 from keras.layers import Dense, Conv1D, Flatten, MaxPooling1D, Dropout
 from keras.optimizers import SGD
-#from scikeras.wrappers import KerasClassifier
+from scikeras.wrappers import KerasClassifier
 from sklearn.preprocessing import LabelEncoder
-#import MinMaxScaler
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
+
 
 
 
@@ -74,10 +44,7 @@ run_join_files = False
 get_mlp = True
 get_hybrid = False
 get_assigned = False
-normalize = False
-balance = False
-standardize = False
-grid_search = False
+
 
 
 
@@ -86,20 +53,21 @@ def main():
     if run_join_files:
         make_joined_files()
     if get_mlp:
-        model = MlpModel()
+        model = KerasClassifier(build_fn=MlpModel)
     elif get_hybrid:
         #define CNN or a combination of CNN with RNN
         pass
     elif get_assigned:
         pass
-        
+    
+    gridSearch(model)
     # group files in groups of 4 patients
     groups=group_patients()
     
     train_test_list= get_train_test(groups)
     
     
-    results_df = run_model(train_test_list, model, folds=10)
+    results_df = run_model(train_test_list, model, folds=3)
     
     print (results_df)
 
@@ -188,11 +156,11 @@ def get_train_test(groups):
 
     return train_test_list
 
-def run_preprocessing(normalize=False, balance=False, standardize=False, grid_search=False, X_train=None, X_test=None, y_train=None, y_test=None, model=None, weights=None):
+def run_preprocessing(normalize=False, balance=False, standardize=False, X_train=None, X_test=None, y_train=None, y_test=None,  weights=None):
     if normalize:
         # Normalize data
         scaler = MinMaxScaler()
-        scaler.fit(X_train)
+        scaler.fit(X_train, y_train)
         X_train = scaler.transform(X_train)
         X_test = scaler.transform(X_test)
         
@@ -209,28 +177,6 @@ def run_preprocessing(normalize=False, balance=False, standardize=False, grid_se
         class_weights = compute_class_weight(class_weight='balanced', classes=class_labels, y=y_train)
         weights = dict(zip(class_labels, class_weights))
 
-    elif grid_search:
-        # Define the parameters for grid search
-        parameters = {
-            'loss': ['categorical_crossentropy', 'mean_squared_error', 'mean_absolute_error'],
-            'optimizer': ['SGD', 'RMSprop', 'Adagrad', 'Adadelta', 'Adam', 'Adamax', 'Nadam'],
-            'batch_size': [10, 20, 40, 60, 80, 100],
-            'epochs': [10, 50, 100],
-            'learning_rate': [0.001, 0.01, 0.1, 0.2, 0.3],
-            'momentum': [0.0, 0.2, 0.4, 0.6, 0.8, 0.9],
-            'activation': ['softmax', 'softplus', 'softsign', 'relu', 'tanh', 'sigmoid', 'hard_sigmoid', 'linear'],
-            'dropout_rate': [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
-            'neurons': [1, 5, 10, 15, 20, 25, 30],
-            'kernel_initializer': ['uniform', 'lecun_uniform', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform']}
-        
-        # Perform grid search for each patient's data
-        best_params_list = []
-        for patient_data in X_train:
-            # Perform grid search on the training data
-            grid_search_model = GridSearchCV(estimator=model, param_grid=parameters, cv=5)
-            grid_search_model.fit(patient_data, y_train)  # Assuming you have the target variable y_train
-            best_params_list.append(grid_search_model.best_params_)
-            breakpoint()
         
    
 
@@ -273,7 +219,7 @@ def run_model(train_test_list, model, folds=3):
         y_val = model_val_data[:, -1]
 
         #preprocess data
-        X_train, X_val, y_train, y_val, weights = run_preprocessing(normalize=False, balance=False, standardize=False, grid_search=False, X_train=X_train, X_test=X_val, y_train=y_train, y_test=y_val, model=model)
+        X_train, X_val, y_train, y_val, weights = run_preprocessing(normalize=False, balance=False, standardize=False, X_train=X_train, X_test=X_val, y_train=y_train, y_test=y_val, model=model)
 
          #convert labels to integers
         y_train = LabelEncoder().fit_transform(y_train)
@@ -282,11 +228,14 @@ def run_model(train_test_list, model, folds=3):
         #convert to categorical
         y_train = keras.utils.to_categorical(y_train, num_classes=5)
 
+
+
+
         #run model
         start_time = time.time()
            # For data balancing, use the balancing option available in the "fit" function. Example:
         # model.fit(X_train, Y_train, batch_size=batch_size, class_weight=weights)
-        model.fit(X_train, y_train, batch_size=10, epochs=5, class_weight=weights)
+        model.fit(X_train, y_train, batch_size=10, epochs=10, class_weight=weights)
         end_time = time.time()
         train_time = end_time - start_time
 
@@ -401,15 +350,67 @@ def MlpModel():
     model.add(Dense(units=64, activation='relu'))
     
     # Add the output layer
-    model.add(Dense(units=5, activation='softmax'))
+    model.add(Dense(units=5))
 
     #define optimizer
     sgd = SGD(learning_rate=0.01, momentum=0.2)
 
     # Compile the model
     model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics= None)
+
+    #model = KerasClassifier( model=model, loss="categorical_crossentropy", optimizer=sgd, epochs=100, batch_size=10, verbose=0)
     
     return model
+
+def gridSearch(model):
+
+    # Load in all patient data
+    # Get al the files in the joined folder
+    joined_files = glob.glob(os.path.join(joined_data_path, "*.csv"))
+    # Sort the files by number
+    joined_files.sort(key=lambda x: int(x.split("_")[-1].split(".")[0]))
+    # Read data into a list of dataframes
+    data = [pd.read_csv(file) for file in joined_files]
+    # Concatenate the dataframes
+    data = pd.concat(data, axis=0)
+    # Get X and y
+    X = data.iloc[:, :-1]
+    y = data.iloc[:, -1]
+
+    # Change X to numpy array
+    X = X.to_numpy()
+
+    # Convert y to integers
+    y = LabelEncoder().fit_transform(y)
+    # Convert y to categorical
+    y = keras.utils.to_categorical(y, num_classes=5)
+
+    #modelK = KerasClassifier(build_fn=MlpModel)
+        # Define the parameters for grid search
+    parameters = {
+        'loss': ['categorical_crossentropy'],
+        'optimizer': ['SGD', 'Adam'],
+        #'random_state': [0, 1],
+        # 'validation_split': [0.1, 0.2, 0.3, 0.4, 0.5],
+        #'shuffle': [True, False],
+#        'verbose': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        #'batch_size': [10, 20, 40, 60, 80, 100],
+        'epochs': [5, 8],
+        }
+    
+
+    
+        # Perform grid search on the training data
+    grid_search_model = GridSearchCV(estimator=model, param_grid=parameters, scoring='accuracy', n_jobs=-1, verbose=1)
+
+    grid_search_model.fit(X, y)
+    best_params = grid_search_model.best_params_
+    # Set the best parameters for the model
+    model.set_params(**best_params)
+    print("Best parameters:", best_params)
+    return model
+
+
 
 main()
 
