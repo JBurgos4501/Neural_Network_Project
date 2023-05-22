@@ -45,6 +45,12 @@ get_mlp = True
 get_hybrid = False
 get_assigned = False
 
+#globals
+normalization = False
+standardization = False
+get_balance = False
+
+
 
 
 
@@ -54,6 +60,7 @@ def main():
         make_joined_files()
     if get_mlp:
         model = KerasClassifier(build_fn=MlpModel)
+        breakpoint()
     elif get_hybrid:
         #define CNN or a combination of CNN with RNN
         pass
@@ -156,35 +163,37 @@ def get_train_test(groups):
 
     return train_test_list
 
-def run_preprocessing(normalize=False, balance=False, standardize=False, X_train=None, X_test=None, y_train=None, y_test=None,  weights=None):
+def run_preprocessing(X, y, normalize=False, balance=False, standardize=False):
+    weights = None
     if normalize:
         # Normalize data
         scaler = MinMaxScaler()
-        scaler.fit(X_train, y_train)
-        X_train = scaler.transform(X_train)
-        X_test = scaler.transform(X_test)
+        scaler.fit(X, y)
+        X = scaler.transform(X)
         
     elif standardize:
         # Standardize data
         scaler = StandardScaler()
-        scaler.fit(X_train)
-        X_train = scaler.transform(X_train)
-        X_test = scaler.transform(X_test)
+        scaler.fit(X, y)
+        X = scaler.transform(X)
 
 
     elif balance:
-        class_labels = np.unique(y_train)  # classes contained in y_train
-        class_weights = compute_class_weight(class_weight='balanced', classes=class_labels, y=y_train)
+        class_labels = np.unique(y)  # classes contained in y_train
+        class_weights = compute_class_weight(class_weight='balanced', classes=class_labels, y=y)
         weights = dict(zip(class_labels, class_weights))
 
         
    
 
-    return X_train, X_test, y_train, y_test, weights
+    return X, y, weights
 
 
 def run_model(train_test_list, model, folds=3):
-    weights = None
+    global normalization
+    global standardization
+    global get_balance
+
     train_data = [] # List of dataframes    
     # Load data first
     for train_patient_path in train_test_list[0]: 
@@ -219,7 +228,8 @@ def run_model(train_test_list, model, folds=3):
         y_val = model_val_data[:, -1]
 
         #preprocess data
-        X_train, X_val, y_train, y_val, weights = run_preprocessing(normalize=False, balance=False, standardize=False, X_train=X_train, X_test=X_val, y_train=y_train, y_test=y_val)
+        X_train, y_train, train_weights = run_preprocessing(X_train,y_train,normalize=normalization, balance=get_balance, standardize=standardization)
+        X_val, y_val, weights = run_preprocessing(X_val,y_val,normalize=False, balance=False, standardize=False)
 
          #convert labels to integers
         y_train = LabelEncoder().fit_transform(y_train)
@@ -229,13 +239,11 @@ def run_model(train_test_list, model, folds=3):
         y_train = keras.utils.to_categorical(y_train, num_classes=5)
 
 
-
-
         #run model
         start_time = time.time()
            # For data balancing, use the balancing option available in the "fit" function. Example:
         # model.fit(X_train, Y_train, batch_size=batch_size, class_weight=weights)
-        model.fit(X_train, y_train, batch_size=10, epochs=10, class_weight=weights)
+        model.fit(X_train, y_train, batch_size=10, epochs=10, class_weight=train_weights)
         end_time = time.time()
         train_time = end_time - start_time
 
@@ -363,6 +371,9 @@ def MlpModel():
     return model
 
 def gridSearch(model):
+    global normalization
+    global standardization
+    global get_balance
 
     # Load in all patient data
     # Get al the files in the joined folder
@@ -380,22 +391,40 @@ def gridSearch(model):
     # Change X to numpy array
     X = X.to_numpy()
 
-    # Convert y to integers
+    # Convert y to integers and numpy array
     y = LabelEncoder().fit_transform(y)
+
+    X, y, weights = run_preprocessing(X,y,normalize=normalization, balance=get_balance, standardize=standardization)
+
+
     # Convert y to categorical
     y = keras.utils.to_categorical(y, num_classes=5)
 
     #modelK = KerasClassifier(build_fn=MlpModel)
         # Define the parameters for grid search
     parameters = {
-        'loss': ['categorical_crossentropy'],
-        'optimizer': ['SGD', 'Adam'],
-        #'random_state': [0, 1],
-        # 'validation_split': [0.1, 0.2, 0.3, 0.4, 0.5],
-        #'shuffle': [True, False],
-#        'verbose': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-        #'batch_size': [10, 20, 40, 60, 80, 100],
-        'epochs': [5, 8],
+    'warm_start': [False, True],
+    'random_state': [None, 0, 1, 2, 3],
+    'optimizer': ['SGD', 'Adam', 'RMSprop', 'Adagrad', 'Adadelta', 'Adamax', 'Nadam'],
+    'loss': ['categorical_crossentropy', 'mean_squared_error', 'binary_crossentropy'],
+    'metrics': [None, 'accuracy', 'binary_accuracy', 'categorical_accuracy', 'top_k_categorical_accuracy',
+                'sparse_top_k_categorical_accuracy', 'sparse_categorical_accuracy', 'mae', 'mse', 'msle',
+                'squared_hinge', 'hinge', 'kullback_leibler_divergence', 'cosine_similarity',
+                'log_cosh_error', 'poisson', 'binary_crossentropy', 'categorical_crossentropy',
+                'sparse_categorical_crossentropy', 'kld', 'poisson_loss', 'mean_squared_logarithmic_error',
+                'categorical_hinge', 'accuracy_threshold', 'sensitivity_at_specificity',
+                'specificity_at_sensitivity', 'false_positives', 'true_positives', 'false_negatives',
+                'true_negatives', 'precision', 'recall', 'true_positive_rate', 'true_negative_rate',
+                'false_positive_rate', 'false_negative_rate', 'positive_likelihood_ratio',
+                'negative_likelihood_ratio', 'positive_predictive_value', 'negative_predictive_value',
+                'balanced_accuracy', 'f1_score', 'matthews_correlation', 'auc'],
+    'batch_size': [None, 10, 20, 40, 60, 80, 100],
+    'validation_batch_size': [None, 10, 20, 40, 60, 80, 100],
+    'verbose': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    'validation_split': [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+    'shuffle': [True, False],
+    'run_eagerly': [False, True],
+    'epochs': [1, 5, 8, 10, 15, 20, 25, 30, 40, 50, 100],
         }
     
 
@@ -403,7 +432,7 @@ def gridSearch(model):
         # Perform grid search on the training data
     grid_search_model = GridSearchCV(estimator=model, param_grid=parameters, scoring='accuracy', n_jobs=-1, verbose=1)
 
-    grid_search_model.fit(X, y)
+    grid_search_model.fit(X, y, class_weight=weights)
     best_params = grid_search_model.best_params_
     # Set the best parameters for the model
     model.set_params(**best_params)
