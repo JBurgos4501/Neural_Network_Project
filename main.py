@@ -29,11 +29,6 @@ from sklearn.utils.class_weight import compute_class_weight
 
 
 
-
-
-
-
-
 data_base_path = "Data"
 # make raw data path
 raw_data_path = os.path.join(data_base_path, "RAW")
@@ -41,12 +36,12 @@ joined_data_path = os.path.join(data_base_path, "Joined")
 
 # Control Variables
 run_join_files = False
-get_mlp = True
-get_hybrid = False
+get_mlp = False
+get_hybrid = True
 get_assigned = False
 
 #globals
-normalization = False
+normalization = True
 standardization = False
 get_balance = False
 
@@ -60,8 +55,8 @@ def main():
         make_joined_files()
     if get_mlp:
         model = KerasClassifier(build_fn=MlpModel)
-        breakpoint()
     elif get_hybrid:
+        model = KerasClassifier(build_fn=CNNModel)
         #define CNN or a combination of CNN with RNN
         pass
     elif get_assigned:
@@ -119,7 +114,7 @@ def make_joined_files():
 
     print("Finished making joined files")
 
-def group_patients(make_combinations = False, make_random = False):
+def group_patients(make_combinations = False, make_random = True):
     # Get all the files in the joined folder
     joined_files = glob.glob(os.path.join(joined_data_path, "*.csv"))
     # Sort the files by number
@@ -189,7 +184,7 @@ def run_preprocessing(X, y, normalize=False, balance=False, standardize=False):
     return X, y, weights
 
 
-def run_model(train_test_list, model, folds=3):
+def run_model(train_test_list, model, folds=4):
     global normalization
     global standardization
     global get_balance
@@ -237,13 +232,13 @@ def run_model(train_test_list, model, folds=3):
 
         #convert to categorical
         y_train = keras.utils.to_categorical(y_train, num_classes=5)
-
+        
 
         #run model
         start_time = time.time()
            # For data balancing, use the balancing option available in the "fit" function. Example:
         # model.fit(X_train, Y_train, batch_size=batch_size, class_weight=weights)
-        model.fit(X_train, y_train, batch_size=10, epochs=10, class_weight=train_weights)
+        model.fit(X_train, y_train, class_weight=train_weights)
         end_time = time.time()
         train_time = end_time - start_time
 
@@ -356,6 +351,10 @@ def MlpModel():
     model.add(Dense(units=128, activation='relu'))
     model.add(Dense(units=64, activation='relu'))
     model.add(Dense(units=64, activation='relu'))
+    model.add(Dense(units=256, activation='relu'))
+    model.add(Dense(units=128, activation='relu'))
+    model.add(Dense(units=64, activation='relu'))
+    model.add(Dense(units=64, activation='relu'))
     
     # Add the output layer
     model.add(Dense(units=5))
@@ -368,6 +367,18 @@ def MlpModel():
 
     #model = KerasClassifier( model=model, loss="categorical_crossentropy", optimizer=sgd, epochs=100, batch_size=10, verbose=0)
     
+    return model
+
+def CNNModel():
+    model = Sequential()
+    model.add(Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(3000, 1)))
+    model.add(Conv1D(filters=64, kernel_size=3, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(5, activation='softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
 
 def gridSearch(model):
@@ -403,40 +414,35 @@ def gridSearch(model):
     #modelK = KerasClassifier(build_fn=MlpModel)
         # Define the parameters for grid search
     parameters = {
-    'warm_start': [False, True],
-    'random_state': [None, 0, 1, 2, 3],
-    'optimizer': ['SGD', 'Adam', 'RMSprop', 'Adagrad', 'Adadelta', 'Adamax', 'Nadam'],
-    'loss': ['categorical_crossentropy', 'mean_squared_error', 'binary_crossentropy'],
-    'metrics': [None, 'accuracy', 'binary_accuracy', 'categorical_accuracy', 'top_k_categorical_accuracy',
-                'sparse_top_k_categorical_accuracy', 'sparse_categorical_accuracy', 'mae', 'mse', 'msle',
-                'squared_hinge', 'hinge', 'kullback_leibler_divergence', 'cosine_similarity',
-                'log_cosh_error', 'poisson', 'binary_crossentropy', 'categorical_crossentropy',
-                'sparse_categorical_crossentropy', 'kld', 'poisson_loss', 'mean_squared_logarithmic_error',
-                'categorical_hinge', 'accuracy_threshold', 'sensitivity_at_specificity',
-                'specificity_at_sensitivity', 'false_positives', 'true_positives', 'false_negatives',
-                'true_negatives', 'precision', 'recall', 'true_positive_rate', 'true_negative_rate',
-                'false_positive_rate', 'false_negative_rate', 'positive_likelihood_ratio',
-                'negative_likelihood_ratio', 'positive_predictive_value', 'negative_predictive_value',
-                'balanced_accuracy', 'f1_score', 'matthews_correlation', 'auc'],
-    'batch_size': [None, 10, 20, 40, 60, 80, 100],
-    'validation_batch_size': [None, 10, 20, 40, 60, 80, 100],
-    'verbose': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    'validation_split': [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
-    'shuffle': [True, False],
-    'run_eagerly': [False, True],
-    'epochs': [1, 5, 8, 10, 15, 20, 25, 30, 40, 50, 100],
+    'loss': ['categorical_crossentropy', 'binary_crossentropy'],
+    'optimizer': ['SGD', 'Adam', 'Adamax'],
+    'epochs': [5, 10, 15],
+    'shuffle': [True, False]
         }
+
     
 
     
         # Perform grid search on the training data
-    grid_search_model = GridSearchCV(estimator=model, param_grid=parameters, scoring='accuracy', n_jobs=-1, verbose=1)
+    grid_search_model = GridSearchCV(estimator=model, param_grid=parameters, scoring='accuracy')
 
     grid_search_model.fit(X, y, class_weight=weights)
     best_params = grid_search_model.best_params_
     # Set the best parameters for the model
     model.set_params(**best_params)
+    print()
+    print()
+    print()
+    print()    
+    print()
+    print("Finished Looking for best parameters")
     print("Best parameters:", best_params)
+    print()
+    print()
+    print()
+    print()    
+    print()
+    
     return model
 
 
