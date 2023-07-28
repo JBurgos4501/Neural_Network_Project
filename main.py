@@ -18,14 +18,14 @@ from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, cohen_ka
 from sklearn.model_selection import GridSearchCV
 import tensorflow as tf
 import keras
-from keras.models import Sequential
-from keras.layers import Dense, Conv1D, Flatten, MaxPooling1D, Dropout
+from keras.models import Sequential, Model
+from keras.layers import Dense, Conv1D, Flatten, MaxPooling1D, Dropout, Input
 from keras.optimizers import SGD
 from scikeras.wrappers import KerasClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
-
+import math
 
 
 
@@ -36,12 +36,12 @@ joined_data_path = os.path.join(data_base_path, "Joined")
 
 # Control Variables
 run_join_files = False
-get_mlp = False
+get_mlp = True
 get_hybrid = True
 get_assigned = False
 
 #globals
-normalization = True
+normalization = False
 standardization = False
 get_balance = False
 
@@ -50,28 +50,50 @@ get_balance = False
 
 
 def main():
+    # Make a list of all the control variables for 
+    control_variables = [get_mlp, get_hybrid, get_assigned]
+    csv_names = [
+        "MLP",
+        "CNN",
+        "CNN_VGG"
+    ]
+
     # join files if needed
     if run_join_files:
         make_joined_files()
-    if get_mlp:
-        model = KerasClassifier(build_fn=MlpModel)
-    elif get_hybrid:
-        model = KerasClassifier(build_fn=CNNModel)
-        #define CNN or a combination of CNN with RNN
-        pass
-    elif get_assigned:
-        pass
-    
-    gridSearch(model)
-    # group files in groups of 4 patients
-    groups=group_patients()
-    
-    train_test_list= get_train_test(groups)
-    
-    
-    results_df = run_model(train_test_list, model, folds=3)
-    
-    print (results_df)
+
+    for i, bool_var in enumerate(control_variables):
+        # If bool_var is false, skip to the next iteration
+        if bool_var == False:
+            continue
+        
+        # If this is running, then the bool_var is true
+        # Depending on the index, run the appropriate model
+        
+        if i == 0:
+            model = KerasClassifier(build_fn=MlpModel)
+        elif i ==1:
+            model = KerasClassifier(build_fn=CNNModel)
+        elif i ==2:
+            model= cnn_vgg(input_shape=(3000, 1), nb_class=5)
+        #   model = KerasClassifier(build_fn=modelX)
+        else:
+            print("No model selected")
+            return
+        
+    # gridSearch(model)
+        # group files in groups of 4 patients
+        groups=group_patients()
+        
+        train_test_list= get_train_test(groups)
+        
+        
+        results_df = run_model(train_test_list, model, folds=3)
+        # Save results to csv
+        results_df.to_csv(os.path.join("Outputs", f"{csv_names[i]}.csv"), index=False)
+
+
+        print (results_df)
 
 def make_joined_files(): 
 
@@ -369,13 +391,65 @@ def MlpModel():
     
     return model
 
+
+
+def cnn_vgg(input_shape, nb_class):
+    # Author: K. Simonyan and A. Zisserman, "Very deep convolutional networks for large-scale image recognition," arXiv preprint arXiv:1409.1556, 2014.
+
+    # Create the input layer with the specified input_shape
+    ip = Input(shape=input_shape)
+
+    # Start with the input layer as the current layer
+    conv = ip
+
+    # Calculate the number of CNN blocks based on the logarithm of the number of columns in the input shape
+    nb_cnn = int(round(math.log(input_shape[0], 2)) - 3)
+    print("pooling layers: %d" % nb_cnn)
+
+    for i in range(nb_cnn):
+        # Calculate the number of filters for the current CNN block
+        num_filters = min(64 * 2 ** i, 512)
+
+        # Add two convolutional layers with ReLU activation and He uniform kernel initialization
+        conv = Conv1D(num_filters, 3, padding='same', activation="relu", kernel_initializer='he_uniform')(conv)
+        conv = Conv1D(num_filters, 3, padding='same', activation="relu", kernel_initializer='he_uniform')(conv)
+
+        # Add an extra convolutional layer for iterations greater than 1
+        if i > 1:
+            conv = Conv1D(num_filters, 3, padding='same', activation="relu", kernel_initializer='he_uniform')(conv)
+
+        # Add a MaxPooling1D layer with a pool size of 2
+        conv = MaxPooling1D(pool_size=2)(conv)
+
+    # Flatten the last layer of the convolutional block
+    flat = Flatten()(conv)
+
+    # Add a fully connected layer with 256 units and ReLU activation
+    fc = Dense(units=256, activation="relu", kernel_initializer='he_uniform')(flat)
+
+    # Add a dropout layer with a rate of 0.5 to reduce overfitting
+    dropout = Dropout(rate=0.5)(fc)
+
+    # Add the output layer with softmax activation for multi-class classification
+    output = Dense(units=nb_class, activation="softmax")(dropout)
+
+    # Create the model with ip as the input and output as the output layer
+    model = Model(ip, output)
+
+    # Compile the model
+    sgd = SGD(learning_rate=0.01, momentum=0.2)
+    model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
+
+    return model
+
+
 def CNNModel():
     model = Sequential()
     model.add(Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(3000, 1)))
     model.add(Conv1D(filters=64, kernel_size=3, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(MaxPooling1D(pool_size=2))
-    model.add(Flatten())
+    # model.add(Dropout(0.5))# Dropout is a regularization technique for reducing overfitting in neural networks by preventing complex co-adaptations on training data.
+   # model.add(MaxPooling1D(pool_size=2))# Max pooling is a sample-based discretization process. The objective is to down-sample an input representation (image, hidden-layer output matrix, etc.), reducing its dimensionality and allowing for assumptions to be made about features contained in the sub-regions binned.
+    model.add(Flatten())# Flatten layer is for converting the data into a 1-dimensional array for inputting it to the next layer.
     model.add(Dense(100, activation='relu'))
     model.add(Dense(5, activation='softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
@@ -414,10 +488,10 @@ def gridSearch(model):
     #modelK = KerasClassifier(build_fn=MlpModel)
         # Define the parameters for grid search
     parameters = {
-    'loss': ['categorical_crossentropy', 'binary_crossentropy'],
-    'optimizer': ['SGD', 'Adam', 'Adamax'],
-    'epochs': [5, 10, 15],
-    'shuffle': [True, False]
+    #'loss': ['categorical_crossentropy', 'binary_crossentropy'],
+    #'optimizer': ['SGD', 'Adam', 'Adamax'],
+    'epochs': [5],
+    #'shuffle': [True, False]
         }
 
     
